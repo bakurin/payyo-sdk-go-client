@@ -138,14 +138,10 @@ func (c *apiClient) sendRequest(req *http.Request, v interface{}) error {
 		}
 
 		resp, doErr = c.HTTPClient.Do(req)
-		if resp != nil {
-			_ = resp.StatusCode
-		}
-
 		shouldRetry, checkErr = retry.CheckRetry(req.Context(), resp, attempt, doErr)
 
 		if doErr != nil {
-			// todo: log
+			c.logger.Printf("[ERR] %s %s request failed: %v", req.Method, req.URL, doErr)
 		}
 
 		if !shouldRetry {

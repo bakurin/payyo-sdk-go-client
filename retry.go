@@ -15,18 +15,22 @@ var (
 	defaultMaxRetryAttempts = 3
 )
 
+// Retry defines an interface to support different retry policies
 type Retry interface {
 	CheckRetry(ctx context.Context, resp *http.Response, attemptNum int, err error) (bool, error)
 	Backoff(attemptNum int, resp *http.Response) time.Duration
 }
 
+// NoRetry is a dummy implementation of Retry
 type NoRetry struct {
 }
 
+// NewNoRetry creates a new NoRetry instance
 func NewNoRetry() *NoRetry {
 	return &NoRetry{}
 }
 
+// CheckRetry checks is new retry is needed
 func (r NoRetry) CheckRetry(ctx context.Context, resp *http.Response, attemptNum int, err error) (bool, error) {
 	if err == nil && ctx.Err() != nil {
 		err = ctx.Err()
@@ -34,6 +38,7 @@ func (r NoRetry) CheckRetry(ctx context.Context, resp *http.Response, attemptNum
 	return false, err
 }
 
+// Backoff returns a delay before next attempt
 func (r NoRetry) Backoff(attemptNum int, resp *http.Response) time.Duration {
 	return 0
 }
@@ -65,27 +70,31 @@ func retryPolicy(resp *http.Response, err error) (bool, error) {
 	return false, nil
 }
 
-type LinearRetry struct {
+// ConstantRetry allow to retry within constant time intervals
+type ConstantRetry struct {
 	RetryDelay       time.Duration
 	MaxRetryAttempts int
 }
 
-func NewLinearRetry(delay time.Duration) *LinearRetry {
+// NewLinearRetry creates a new instance of NewLinearRetry
+func NewLinearRetry(delay time.Duration) *ConstantRetry {
 	if delay == 0 {
 		delay = defaultRetryDelay
 	}
 
-	return &LinearRetry{
+	return &ConstantRetry{
 		RetryDelay:       delay,
 		MaxRetryAttempts: defaultMaxRetryAttempts,
 	}
 }
 
-func (r LinearRetry) Backoff(attemptNum int, resp *http.Response) time.Duration {
+// Backoff returns a delay before upcoming attempt
+func (r ConstantRetry) Backoff(attemptNum int, resp *http.Response) time.Duration {
 	return r.RetryDelay
 }
 
-func (r LinearRetry) CheckRetry(ctx context.Context, resp *http.Response, attemptNum int, err error) (bool, error) {
+// CheckRetry checks if another attempt is needed
+func (r ConstantRetry) CheckRetry(ctx context.Context, resp *http.Response, attemptNum int, err error) (bool, error) {
 	if ctx.Err() != nil {
 		return false, ctx.Err()
 	}
