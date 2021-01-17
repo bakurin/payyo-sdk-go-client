@@ -12,7 +12,7 @@ import (
 
 var (
 	defaultRetryDelay       = time.Duration(2)
-	defaultMaxRetryAttempts = 3
+	defaultMaxRetryAttempts = uint(1)
 )
 
 // Retry defines an interface to support different retry policies
@@ -35,6 +35,9 @@ func (r NoRetry) CheckRetry(ctx context.Context, resp *http.Response, attemptNum
 	if err == nil && ctx.Err() != nil {
 		err = ctx.Err()
 	}
+
+	_, err = retryPolicy(resp, err)
+
 	return false, err
 }
 
@@ -63,8 +66,13 @@ func retryPolicy(resp *http.Response, err error) (bool, error) {
 		return true, nil
 	}
 
+	// consider error codes of range 500 as recoverable
 	if resp.StatusCode == 0 || (resp.StatusCode >= 500 && resp.StatusCode != 501) {
-		return true, fmt.Errorf("unexpected HTTP status %s", resp.Status)
+		return true, fmt.Errorf("unexpected HTTP status: %s", resp.Status)
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return false, fmt.Errorf("unexpected HTTP status: %s", resp.Status)
 	}
 
 	return false, nil
@@ -73,18 +81,14 @@ func retryPolicy(resp *http.Response, err error) (bool, error) {
 // ConstantRetry allow to retry within constant time intervals
 type ConstantRetry struct {
 	RetryDelay       time.Duration
-	MaxRetryAttempts int
+	MaxRetryAttempts uint
 }
 
-// NewLinearRetry creates a new instance of NewLinearRetry
-func NewLinearRetry(delay time.Duration) *ConstantRetry {
-	if delay == 0 {
-		delay = defaultRetryDelay
-	}
-
+// NewConstantRetry creates a new instance of NewConstantRetry
+func NewConstantRetry(maxRetries uint, delay time.Duration) *ConstantRetry {
 	return &ConstantRetry{
 		RetryDelay:       delay,
-		MaxRetryAttempts: defaultMaxRetryAttempts,
+		MaxRetryAttempts: maxRetries,
 	}
 }
 
@@ -99,10 +103,10 @@ func (r ConstantRetry) CheckRetry(ctx context.Context, resp *http.Response, atte
 		return false, ctx.Err()
 	}
 
-	if attemptNum >= r.MaxRetryAttempts {
-		return false, fmt.Errorf("attempts limit (%d) axided", r.MaxRetryAttempts)
+	shouldRetry, err := retryPolicy(resp, err)
+	if uint(attemptNum) >= r.MaxRetryAttempts {
+		return false, err
 	}
 
-	shouldRetry, _ := retryPolicy(resp, err)
-	return shouldRetry, nil
+	return shouldRetry, err
 }

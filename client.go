@@ -197,7 +197,7 @@ func (c *apiClient) sendRequest(req *http.Request, v interface{}) error {
 		return fmt.Errorf("%s %s giving up after %d attempt(s)", req.Method, req.URL, attempt)
 	}
 
-	return fmt.Errorf("%s %s giving up after %d attempt(s): %w", req.Method, req.URL, attempt, err)
+	return err
 }
 
 func (c apiClient) drainBody(body io.ReadCloser) {
