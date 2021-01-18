@@ -10,11 +10,6 @@ import (
 	"time"
 )
 
-var (
-	defaultRetryDelay       = time.Duration(2)
-	defaultMaxRetryAttempts = uint(1)
-)
-
 // Retry defines an interface to support different retry policies
 type Retry interface {
 	CheckRetry(ctx context.Context, resp *http.Response, attemptNum int, err error) (bool, error)

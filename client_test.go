@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func testServer(t *testing.T, resp string) *httptest.Server {
+func testServer(resp string) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		_, _ = rw.Write([]byte(resp))
 	}))
@@ -43,7 +43,7 @@ func TestClient_Call_RequestHeaders(t *testing.T) {
 	assert.NoError(t, err)
 }
 func TestClient_Call_Success(t *testing.T) {
-	server := testServer(t, `{"jsonrpc": "2.0","result": {"key": "Value"},"id": "1"}`)
+	server := testServer(`{"jsonrpc": "2.0","result": {"key": "Value"},"id": "1"}`)
 
 	client := apiClient{
 		HTTPClient: server.Client(),
@@ -62,7 +62,7 @@ func TestClient_Call_Success(t *testing.T) {
 }
 
 func TestClient_Call_Error(t *testing.T) {
-	server := testServer(t, `{"jsonrpc": "2.0","error": {"code": 1, "message": "test error"},"id": "1"}`)
+	server := testServer(`{"jsonrpc": "2.0","error": {"code": 1, "message": "test error"},"id": "1"}`)
 
 	client := apiClient{
 		HTTPClient: server.Client(),
