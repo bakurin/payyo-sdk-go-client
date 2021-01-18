@@ -58,7 +58,7 @@ func retryPolicy(resp *http.Response, err error) (bool, error) {
 			}
 		}
 
-		return true, nil
+		return true, err
 	}
 
 	// consider error codes of range 500 as recoverable
