@@ -23,7 +23,15 @@ func main() {
 	serverTerminated := make(chan interface{})
 	stop := startMockServer(serverTerminated)
 
-	cnt := client.New("key", "secret", "http://localhost:8080", nil)
+	logger := client.LoggerFunc(func(format string, args ...interface{}) {
+		_, _ = fmt.Printf(format, args...)
+	})
+
+	cfg := client.NewConfig("key", "secret")
+	cfg.BaseURL = "http://localhost:8080"
+	cfg.Logger = logger
+
+	cnt := client.New(cfg)
 
 	req := merchantRequest{
 		MerchantID: 1,

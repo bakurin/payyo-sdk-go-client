@@ -11,9 +11,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"net/http"
-	"os"
 	"time"
 )
 
@@ -23,7 +21,7 @@ const (
 )
 
 var (
-	defaultRetrier = NewNoRetry()
+	defaultRequestRetryer = NewNopRequestRetryer()
 )
 
 // Client is provided methods to all API
@@ -33,33 +31,19 @@ type Client interface {
 }
 
 type apiClient struct {
-	publicKey      string
-	secret         string
-	BaseURL        string
-	RequestRetrier Retry
+	Config         *Config
 	HTTPClient     *http.Client
-	logger         *log.Logger
+	RequestRetryer RequestRetryer
 }
 
 // New creates a new client instance
-func New(publicKey, secret, baseURL string, logger *log.Logger) Client {
-	if baseURL == "" {
-		baseURL = BaseURLV3
-	}
-
-	if logger == nil {
-		logger = log.New(os.Stdout, "", 5)
-	}
-
+func New(config *Config) Client {
 	return &apiClient{
-		publicKey: publicKey,
-		secret:    secret,
-		BaseURL:   baseURL,
+		Config: config,
 		HTTPClient: &http.Client{
 			Timeout: time.Second * 60,
 		},
-		RequestRetrier: defaultRetrier,
-		logger:         logger,
+		RequestRetryer: defaultRequestRetryer,
 	}
 }
 
@@ -73,17 +57,19 @@ func (c apiClient) CallWithContext(ctx context.Context, method string, params, r
 	rpcReq := newRPCRequest(method, params, "1")
 	body, err := json.Marshal(rpcReq)
 
-	c.logger.Printf("[DBG] request body: %s", body)
+	if c.Config.Logger != nil {
+		c.Config.Logger.Logf("[DBG] request body: %s", body)
+	}
 
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.Config.BaseURL, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
 
-	signature, err := signRequestBody(c.publicKey, c.secret, body)
+	signature, err := signRequestBody(c.Config.publicKey, c.Config.secret, body)
 	if err != nil {
 		return err
 	}
@@ -120,9 +106,9 @@ func (c *apiClient) sendRequest(req *http.Request, v interface{}) error {
 	var doErr, checkErr error
 	var shouldRetry bool
 
-	retry := c.RequestRetrier
+	retry := c.RequestRetryer
 	if retry == nil {
-		retry = defaultRetrier
+		retry = defaultRequestRetryer
 	}
 
 	for {
@@ -141,7 +127,7 @@ func (c *apiClient) sendRequest(req *http.Request, v interface{}) error {
 		shouldRetry, checkErr = retry.CheckRetry(req.Context(), resp, attempt, doErr)
 
 		if doErr != nil {
-			c.logger.Printf("[ERR] %s %s request failed: %v", req.Method, req.URL, doErr)
+			c.log("[ERR] %s %s request failed: %v", req.Method, req.URL, doErr)
 		}
 
 		if !shouldRetry {
@@ -204,7 +190,13 @@ func (c apiClient) drainBody(body io.ReadCloser) {
 	defer body.Close()
 	_, err := io.Copy(ioutil.Discard, io.LimitReader(body, int64(4096)))
 	if err != nil {
-		c.logger.Printf("[ERR] error reading response body: %v", err)
+		c.log("[ERR] error reading response body: %v", err)
+	}
+}
+
+func (c apiClient) log(format string, args ...interface{}) {
+	if c.Config.Logger != nil {
+		c.Config.Logger.Logf(format, args...)
 	}
 }
 

@@ -10,23 +10,23 @@ import (
 	"time"
 )
 
-// Retry defines an interface to support different retry policies
-type Retry interface {
+// RequestRetryer defines an interface to support different retry policies
+type RequestRetryer interface {
 	CheckRetry(ctx context.Context, resp *http.Response, attemptNum int, err error) (bool, error)
 	Backoff(attemptNum int, resp *http.Response) time.Duration
 }
 
-// NoRetry is a dummy implementation of Retry
-type NoRetry struct {
+// NopRequestRetryer is a dummy implementation of RequestRetryer
+type NopRequestRetryer struct {
 }
 
-// NewNoRetry creates a new NoRetry instance
-func NewNoRetry() *NoRetry {
-	return &NoRetry{}
+// NewNopRequestRetryer creates a new NopRequestRetryer instance
+func NewNopRequestRetryer() *NopRequestRetryer {
+	return &NopRequestRetryer{}
 }
 
 // CheckRetry checks is new retry is needed
-func (r NoRetry) CheckRetry(ctx context.Context, resp *http.Response, attemptNum int, err error) (bool, error) {
+func (r NopRequestRetryer) CheckRetry(ctx context.Context, resp *http.Response, attemptNum int, err error) (bool, error) {
 	if err == nil && ctx.Err() != nil {
 		err = ctx.Err()
 	}
@@ -37,7 +37,7 @@ func (r NoRetry) CheckRetry(ctx context.Context, resp *http.Response, attemptNum
 }
 
 // Backoff returns a delay before next attempt
-func (r NoRetry) Backoff(attemptNum int, resp *http.Response) time.Duration {
+func (r NopRequestRetryer) Backoff(attemptNum int, resp *http.Response) time.Duration {
 	return 0
 }
 
@@ -73,27 +73,27 @@ func retryPolicy(resp *http.Response, err error) (bool, error) {
 	return false, nil
 }
 
-// ConstantRetry allow to retry within constant time intervals
-type ConstantRetry struct {
+// ConstantRequestRetryer allow to retry within constant time intervals
+type ConstantRequestRetryer struct {
 	RetryDelay       time.Duration
 	MaxRetryAttempts uint
 }
 
-// NewConstantRetry creates a new instance of NewConstantRetry
-func NewConstantRetry(maxRetries uint, delay time.Duration) *ConstantRetry {
-	return &ConstantRetry{
+// NewConstantRequestRetryer creates a new instance of NewConstantRequestRetryer
+func NewConstantRequestRetryer(maxRetries uint, delay time.Duration) *ConstantRequestRetryer {
+	return &ConstantRequestRetryer{
 		RetryDelay:       delay,
 		MaxRetryAttempts: maxRetries,
 	}
 }
 
 // Backoff returns a delay before upcoming attempt
-func (r ConstantRetry) Backoff(attemptNum int, resp *http.Response) time.Duration {
+func (r ConstantRequestRetryer) Backoff(attemptNum int, resp *http.Response) time.Duration {
 	return r.RetryDelay
 }
 
 // CheckRetry checks if another attempt is needed
-func (r ConstantRetry) CheckRetry(ctx context.Context, resp *http.Response, attemptNum int, err error) (bool, error) {
+func (r ConstantRequestRetryer) CheckRetry(ctx context.Context, resp *http.Response, attemptNum int, err error) (bool, error) {
 	if ctx.Err() != nil {
 		return false, ctx.Err()
 	}

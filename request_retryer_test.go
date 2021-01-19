@@ -12,12 +12,12 @@ import (
 )
 
 func TestNoRetry_Backoff(t *testing.T) {
-	retry := NewNoRetry()
+	retry := NewNopRequestRetryer()
 	assert.Equal(t, time.Duration(0), retry.Backoff(1, &http.Response{}))
 }
 
 func TestNoRetry_CheckRetry_OnSuccess(t *testing.T) {
-	retry := NewNoRetry()
+	retry := NewNopRequestRetryer()
 	resp := &http.Response{
 		StatusCode: 200,
 	}
@@ -29,7 +29,7 @@ func TestNoRetry_CheckRetry_OnSuccess(t *testing.T) {
 }
 
 func TestNoRetry_CheckRetry_OnFailure(t *testing.T) {
-	retry := NewNoRetry()
+	retry := NewNopRequestRetryer()
 	resp := &http.Response{
 		Status:     http.StatusText(http.StatusUnauthorized),
 		StatusCode: http.StatusUnauthorized,
@@ -43,13 +43,13 @@ func TestNoRetry_CheckRetry_OnFailure(t *testing.T) {
 
 func TestConstantRetry_Backoff(t *testing.T) {
 	constDuration := time.Duration(42)
-	retry := NewConstantRetry(1, constDuration)
+	retry := NewConstantRequestRetryer(1, constDuration)
 	assert.Equal(t, constDuration, retry.Backoff(1, &http.Response{}))
 	assert.Equal(t, constDuration, retry.Backoff(2, &http.Response{}))
 }
 
 func TestConstantRetry_CheckRetry_OnSuccess(t *testing.T) {
-	retry := NewConstantRetry(1, time.Duration(1))
+	retry := NewConstantRequestRetryer(1, time.Duration(1))
 	resp := &http.Response{
 		StatusCode: http.StatusOK,
 	}
@@ -60,7 +60,7 @@ func TestConstantRetry_CheckRetry_OnSuccess(t *testing.T) {
 }
 
 func TestConstantRetry_CheckRetry_OnFailure(t *testing.T) {
-	retry := NewConstantRetry(2, time.Duration(1))
+	retry := NewConstantRequestRetryer(2, time.Duration(1))
 	resp := &http.Response{
 		Status:     http.StatusText(http.StatusUnauthorized),
 		StatusCode: http.StatusUnauthorized,
@@ -72,7 +72,7 @@ func TestConstantRetry_CheckRetry_OnFailure(t *testing.T) {
 }
 
 func TestConstantRetry_CheckRetry_OnRecoverableFailure(t *testing.T) {
-	retry := NewConstantRetry(2, time.Duration(1))
+	retry := NewConstantRequestRetryer(2, time.Duration(1))
 	resp := &http.Response{
 		Status:     http.StatusText(http.StatusInternalServerError),
 		StatusCode: http.StatusInternalServerError,
@@ -88,7 +88,7 @@ func TestConstantRetry_CheckRetry_OnRecoverableFailure(t *testing.T) {
 }
 
 func TestConstantRetry_CheckRetry_OnContextCancelled(t *testing.T) {
-	retry := NewConstantRetry(2, time.Duration(1))
+	retry := NewConstantRequestRetryer(2, time.Duration(1))
 	resp := &http.Response{
 		Status:     http.StatusText(http.StatusUnauthorized),
 		StatusCode: http.StatusUnauthorized,

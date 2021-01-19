@@ -2,8 +2,6 @@ package client
 
 import (
 	"fmt"
-	"io/ioutil"
-	"log"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -35,8 +33,9 @@ func TestClient_Call_RequestHeaders(t *testing.T) {
 
 	client := apiClient{
 		HTTPClient: server.Client(),
-		BaseURL:    server.URL,
-		logger:     log.New(ioutil.Discard, "", 0),
+		Config: &Config{
+			BaseURL: server.URL,
+		},
 	}
 
 	err := client.Call("any.method", &struct{}{}, &struct{}{})
@@ -47,8 +46,9 @@ func TestClient_Call_Success(t *testing.T) {
 
 	client := apiClient{
 		HTTPClient: server.Client(),
-		BaseURL:    server.URL,
-		logger:     log.New(ioutil.Discard, "", 0),
+		Config: &Config{
+			BaseURL: server.URL,
+		},
 	}
 
 	params := struct{}{}
@@ -66,8 +66,9 @@ func TestClient_Call_Error(t *testing.T) {
 
 	client := apiClient{
 		HTTPClient: server.Client(),
-		BaseURL:    server.URL,
-		logger:     log.New(ioutil.Discard, "", 0),
+		Config: &Config{
+			BaseURL: server.URL,
+		},
 	}
 
 	params := struct{}{}
@@ -92,10 +93,11 @@ func TestClient_Call_SuccessAfterRetry(t *testing.T) {
 	}))
 
 	client := apiClient{
-		HTTPClient:     server.Client(),
-		BaseURL:        server.URL,
-		RequestRetrier: NewConstantRetry(uint(2), 0),
-		logger:         log.New(ioutil.Discard, "", 0),
+		HTTPClient: server.Client(),
+		Config: &Config{
+			BaseURL: server.URL,
+		},
+		RequestRetryer: NewConstantRequestRetryer(uint(2), 0),
 	}
 
 	result := &struct {
@@ -113,10 +115,11 @@ func TestClient_Call_FailAfterAllRetries(t *testing.T) {
 	}))
 
 	client := apiClient{
-		HTTPClient:     server.Client(),
-		BaseURL:        server.URL,
-		RequestRetrier: NewConstantRetry(uint(1), 0),
-		logger:         log.New(ioutil.Discard, "", 0),
+		HTTPClient: server.Client(),
+		Config: &Config{
+			BaseURL: server.URL,
+		},
+		RequestRetryer: NewConstantRequestRetryer(uint(1), 0),
 	}
 
 	err := client.Call("any.method", &struct{}{}, &struct{}{})
@@ -134,10 +137,11 @@ func TestClient_Call_DoNotRetry(t *testing.T) {
 	}))
 
 	client := apiClient{
-		HTTPClient:     server.Client(),
-		BaseURL:        server.URL,
-		RequestRetrier: NewConstantRetry(uint(1), 0),
-		logger:         log.New(ioutil.Discard, "", 0),
+		HTTPClient: server.Client(),
+		Config: &Config{
+			BaseURL: server.URL,
+		},
+		RequestRetryer: NewConstantRequestRetryer(uint(1), 0),
 	}
 
 	err := client.Call("any.method", &struct{}{}, &struct{}{})
