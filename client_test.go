@@ -1,10 +1,14 @@
 package client
 
 import (
+	"crypto/x509"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -15,8 +19,8 @@ func testServer(resp string) *httptest.Server {
 	}))
 }
 
-func Test_signRequestBody(t *testing.T) {
-	signature, err := signRequestBody("public key", "secret", []byte("{}"))
+func TestHmac256Signer(t *testing.T) {
+	signature, err := Hmac256Signer("public key", "secret", []byte("{}"))
 
 	assert.NoError(t, err)
 	assert.Equal(t, "cHVibGljIGtleToyYTcyOTc1ZTIxZDgzZmRjZGY3Y2U1ZDY2ZGMzOTBlM2MzZWEwMGI3MjJlOTAzNmI5YTlhNjFkZDljMjIyNzk4", signature)
@@ -95,9 +99,9 @@ func TestClient_Call_SuccessAfterRetry(t *testing.T) {
 	client := apiClient{
 		HTTPClient: server.Client(),
 		Config: &Config{
-			BaseURL: server.URL,
+			BaseURL:  server.URL,
+			RetryMax: 2,
 		},
-		RequestRetryer: NewConstantRequestRetryer(uint(2), 0),
 	}
 
 	result := &struct {
@@ -117,9 +121,9 @@ func TestClient_Call_FailAfterAllRetries(t *testing.T) {
 	client := apiClient{
 		HTTPClient: server.Client(),
 		Config: &Config{
-			BaseURL: server.URL,
+			BaseURL:  server.URL,
+			RetryMax: 2,
 		},
-		RequestRetryer: NewConstantRequestRetryer(uint(1), 0),
 	}
 
 	err := client.Call("any.method", &struct{}{}, &struct{}{})
@@ -139,13 +143,91 @@ func TestClient_Call_DoNotRetry(t *testing.T) {
 	client := apiClient{
 		HTTPClient: server.Client(),
 		Config: &Config{
-			BaseURL: server.URL,
+			BaseURL:  server.URL,
+			RetryMax: 0,
 		},
-		RequestRetryer: NewConstantRequestRetryer(uint(1), 0),
 	}
 
 	err := client.Call("any.method", &struct{}{}, &struct{}{})
 
 	assert.Error(t, err)
 	assert.Equal(t, "unexpected HTTP status: 401 Unauthorized", err.Error())
+}
+
+func TestClient_retryPolicy_Status500(t *testing.T) {
+	resp := &http.Response{
+		Status:     http.StatusText(http.StatusInternalServerError),
+		StatusCode: http.StatusInternalServerError,
+	}
+
+	shouldRetry, err := retryPolicy(resp, nil)
+	assert.EqualError(t, err, "unexpected HTTP status: Internal Server Error")
+	assert.True(t, shouldRetry)
+}
+
+func TestClient_retryPolicy_Status400(t *testing.T) {
+	resp := &http.Response{
+		Status:     http.StatusText(http.StatusBadRequest),
+		StatusCode: http.StatusBadRequest,
+	}
+
+	shouldRetry, err := retryPolicy(resp, nil)
+	assert.EqualError(t, err, "unexpected HTTP status: Bad Request")
+	assert.False(t, shouldRetry)
+}
+
+func TestClient_checkRetry_TooManyRedirects(t *testing.T) {
+	resp := &http.Response{
+		Status:     http.StatusText(http.StatusBadRequest),
+		StatusCode: http.StatusBadRequest,
+	}
+
+	respErr := &url.Error{
+		Op:  "GET",
+		URL: "https://example.net",
+		Err: errors.New("stopped after 42 redirects"),
+	}
+	shouldRetry, err := retryPolicy(resp, respErr)
+	assert.EqualError(t, err, `GET "https://example.net": stopped after 42 redirects`)
+	assert.False(t, shouldRetry)
+}
+
+func TestClient_retryPolicy_UnsupportedProtocolScheme(t *testing.T) {
+	resp := &http.Response{
+		Status:     http.StatusText(http.StatusBadRequest),
+		StatusCode: http.StatusBadRequest,
+	}
+
+	respErr := &url.Error{
+		Op:  "GET",
+		URL: "https://example.net",
+		Err: errors.New("unsupported protocol scheme"),
+	}
+	shouldRetry, err := retryPolicy(resp, respErr)
+	assert.EqualError(t, err, `GET "https://example.net": unsupported protocol scheme`)
+	assert.False(t, shouldRetry)
+}
+
+func TestClient_retryPolicy_UnknownAuthority(t *testing.T) {
+	resp := &http.Response{
+		Status:     http.StatusText(http.StatusBadRequest),
+		StatusCode: http.StatusBadRequest,
+	}
+
+	respErr := &url.Error{
+		Op:  "GET",
+		URL: "https://example.net",
+		Err: x509.UnknownAuthorityError{},
+	}
+	shouldRetry, err := retryPolicy(resp, respErr)
+	assert.EqualError(t, err, `GET "https://example.net": x509: certificate signed by unknown authority`)
+	assert.False(t, shouldRetry)
+}
+
+func TestConstantRetry(t *testing.T) {
+	backoff1 := LinearBackoff(time.Millisecond, 2*time.Millisecond, 1, &http.Response{})
+	assert.Equal(t, time.Millisecond, backoff1)
+
+	backoff2 := LinearBackoff(time.Millisecond, 2*time.Millisecond, 2, &http.Response{})
+	assert.Equal(t, 2*time.Millisecond, backoff2)
 }

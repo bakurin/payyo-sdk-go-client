@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -12,6 +13,8 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"net/url"
+	"regexp"
 	"time"
 )
 
@@ -21,7 +24,8 @@ const (
 )
 
 var (
-	defaultRequestRetryer = NewNopRequestRetryer()
+	defaultRequestBackoff = LinearBackoff
+	defaultRequestSigner  = Hmac256Signer
 )
 
 // Client is provided methods to all API
@@ -33,7 +37,8 @@ type Client interface {
 type apiClient struct {
 	Config         *Config
 	HTTPClient     *http.Client
-	RequestRetryer RequestRetryer
+	RequestBackoff Backoff
+	RequestSigner  Signer
 }
 
 // New creates a new client instance
@@ -43,8 +48,40 @@ func New(config *Config) Client {
 		HTTPClient: &http.Client{
 			Timeout: time.Second * 60,
 		},
-		RequestRetryer: defaultRequestRetryer,
+		RequestBackoff: defaultRequestBackoff,
+		RequestSigner:  defaultRequestSigner,
 	}
+}
+
+// Backoff allows to define different backoff scenarios to request retries
+type Backoff func(min, max time.Duration, attemptNum int, resp *http.Response) time.Duration
+
+// LinearBackoff linearly increased the backoff interval
+func LinearBackoff(min, max time.Duration, attemptNum int, resp *http.Response) time.Duration {
+	delay := min * time.Duration(attemptNum)
+	if delay > max {
+		delay = max
+	}
+
+	return delay
+}
+
+// Signer is an interface of function to sign request body
+type Signer func(publicKey, secret string, body []byte) (string, error)
+
+// Hmac256Signer is default request signer
+func Hmac256Signer(publicKey, secret string, body []byte) (string, error) {
+	base64body := base64.RawURLEncoding.EncodeToString(body)
+	hash := hmac.New(sha256.New, []byte(secret))
+	_, err := hash.Write([]byte(base64body))
+	if err != nil {
+		return "", err
+	}
+
+	bodyHash := hex.EncodeToString(hash.Sum(nil))
+	signature := fmt.Sprintf("%s:%s", publicKey, bodyHash)
+
+	return base64.StdEncoding.EncodeToString([]byte(signature)), nil
 }
 
 // Call the RPC method
@@ -69,7 +106,12 @@ func (c apiClient) CallWithContext(ctx context.Context, method string, params, r
 		return err
 	}
 
-	signature, err := signRequestBody(c.Config.publicKey, c.Config.secret, body)
+	signer := c.RequestSigner
+	if signer == nil {
+		signer = defaultRequestSigner
+	}
+
+	signature, err := signer(c.Config.publicKey, c.Config.secret, body)
 	if err != nil {
 		return err
 	}
@@ -86,29 +128,15 @@ func (c apiClient) CallWithContext(ctx context.Context, method string, params, r
 	return nil
 }
 
-func signRequestBody(publicKey, secret string, body []byte) (string, error) {
-	base64body := base64.RawURLEncoding.EncodeToString(body)
-	hash := hmac.New(sha256.New, []byte(secret))
-	_, err := hash.Write([]byte(base64body))
-	if err != nil {
-		return "", err
-	}
-
-	bodyHash := hex.EncodeToString(hash.Sum(nil))
-	signature := fmt.Sprintf("%s:%s", publicKey, bodyHash)
-
-	return base64.StdEncoding.EncodeToString([]byte(signature)), nil
-}
-
 func (c *apiClient) sendRequest(req *http.Request, v interface{}) error {
 	var attempt int
 	var resp *http.Response
 	var doErr, checkErr error
 	var shouldRetry bool
 
-	retry := c.RequestRetryer
+	retry := c.RequestBackoff
 	if retry == nil {
-		retry = defaultRequestRetryer
+		retry = defaultRequestBackoff
 	}
 
 	for {
@@ -124,7 +152,7 @@ func (c *apiClient) sendRequest(req *http.Request, v interface{}) error {
 		}
 
 		resp, doErr = c.HTTPClient.Do(req)
-		shouldRetry, checkErr = retry.CheckRetry(req.Context(), resp, attempt, doErr)
+		shouldRetry, checkErr = checkRetry(req.Context(), resp, c.Config.RetryMax, attempt, doErr)
 
 		if doErr != nil {
 			c.log("[ERR] %s %s request failed: %v", req.Method, req.URL, doErr)
@@ -139,7 +167,7 @@ func (c *apiClient) sendRequest(req *http.Request, v interface{}) error {
 			c.drainBody(resp.Body)
 		}
 
-		wait := retry.Backoff(attempt, resp)
+		wait := retry(c.Config.RetryWaitMin, c.Config.RetryWaitMax, attempt, resp)
 		select {
 		case <-req.Context().Done():
 			c.HTTPClient.CloseIdleConnections()
@@ -184,6 +212,51 @@ func (c *apiClient) sendRequest(req *http.Request, v interface{}) error {
 	}
 
 	return err
+}
+
+func checkRetry(ctx context.Context, resp *http.Response, retryMax, attemptNum int, err error) (bool, error) {
+	if ctx.Err() != nil {
+		return false, ctx.Err()
+	}
+
+	shouldRetry, err := retryPolicy(resp, err)
+	if attemptNum >= retryMax {
+		return false, err
+	}
+
+	return shouldRetry, err
+}
+
+func retryPolicy(resp *http.Response, err error) (bool, error) {
+	if err != nil {
+		if v, ok := err.(*url.Error); ok {
+			if regexp.MustCompile(`stopped after \d+ redirects\z`).MatchString(v.Error()) {
+				return false, v
+			}
+
+			if regexp.MustCompile(`unsupported protocol scheme`).MatchString(v.Error()) {
+				return false, v
+			}
+
+			// Don't retry if the error was due to TLS cert verification failure.
+			if _, ok := v.Err.(x509.UnknownAuthorityError); ok {
+				return false, v
+			}
+		}
+
+		return true, err
+	}
+
+	// consider error codes of range 500 as recoverable
+	if resp.StatusCode == 0 || (resp.StatusCode >= 500 && resp.StatusCode != 501) {
+		return true, fmt.Errorf("unexpected HTTP status: %s", resp.Status)
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return false, fmt.Errorf("unexpected HTTP status: %s", resp.Status)
+	}
+
+	return false, nil
 }
 
 func (c apiClient) drainBody(body io.ReadCloser) {
