@@ -10,10 +10,12 @@ import (
 	"time"
 )
 
+// The request struct
 type merchantRequest struct {
 	MerchantID int `json:"merchant_id"`
 }
 
+// The simplest response struct
 type merchantDetails struct {
 	MerchantID int    `json:"merchant_id"`
 	Name       string `json:"name"`
@@ -21,13 +23,18 @@ type merchantDetails struct {
 
 func main() {
 	serverTerminated := make(chan interface{})
+	// Start mock server to emulate http response
 	stop := startMockServer(serverTerminated)
 
+	// Log to stdout. You can choose any other way to log
 	logger := client.LoggerFunc(func(format string, args ...interface{}) {
 		_, _ = fmt.Printf(format, args...)
 	})
 
+	// Mock server doesn't authenticate request. But to run on real environment
+	// the appropriate credentials have to be used
 	cfg := client.NewConfig("key", "secret")
+	// The mock server address.
 	cfg.BaseURL = "http://localhost:8080"
 	cfg.Logger = logger
 
@@ -45,6 +52,7 @@ func main() {
 	}
 
 	close(stop)
+	// Let http server to terminate
 	<-serverTerminated
 }
 
