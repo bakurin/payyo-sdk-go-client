@@ -224,10 +224,25 @@ func TestClient_retryPolicy_UnknownAuthority(t *testing.T) {
 	assert.False(t, shouldRetry)
 }
 
-func TestConstantRetry(t *testing.T) {
-	backoff1 := LinearBackoff(time.Millisecond, 2*time.Millisecond, 1, &http.Response{})
-	assert.Equal(t, time.Millisecond, backoff1)
+func TestLinearJitterBackoff(t *testing.T) {
+	min := time.Second
+	max := 2 * time.Second
+	backoff := LinearJitterBackoff(min, max, 1, &http.Response{})
 
-	backoff2 := LinearBackoff(time.Millisecond, 2*time.Millisecond, 2, &http.Response{})
-	assert.Equal(t, 2*time.Millisecond, backoff2)
+	assert.Greater(t, backoff.Nanoseconds(), min.Nanoseconds())
+	assert.Less(t, backoff.Nanoseconds(), max.Nanoseconds())
+}
+
+func TestExponentialJitterBackoff(t *testing.T) {
+	min := time.Second
+	max := 60 * time.Second
+
+	backoff1 := ExponentialJitterBackoff(min, max, 1, &http.Response{})
+	backoff2 := ExponentialJitterBackoff(min, max, 2, &http.Response{})
+
+	assert.Greater(t, backoff1.Nanoseconds(), min.Nanoseconds())
+	assert.Less(t, backoff1.Nanoseconds(), max.Nanoseconds())
+
+	assert.Greater(t, backoff2.Nanoseconds(), min.Nanoseconds())
+	assert.Less(t, backoff2.Nanoseconds(), max.Nanoseconds())
 }

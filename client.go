@@ -12,6 +12,8 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -24,7 +26,7 @@ const (
 )
 
 var (
-	defaultRequestBackoff = LinearBackoff
+	defaultRequestBackoff = ExponentialJitterBackoff
 	defaultRequestSigner  = Hmac256Signer
 )
 
@@ -56,14 +58,32 @@ func New(config *Config) Client {
 // Backoff allows to define different backoff scenarios to request retries
 type Backoff func(min, max time.Duration, attemptNum int, resp *http.Response) time.Duration
 
-// LinearBackoff linearly increased the backoff interval
-func LinearBackoff(min, max time.Duration, attemptNum int, resp *http.Response) time.Duration {
-	delay := min * time.Duration(attemptNum)
-	if delay > max {
-		delay = max
+// LinearJitterBackoff linearly increased the backoff with jiter
+func LinearJitterBackoff(min, max time.Duration, attemptNum int, resp *http.Response) time.Duration {
+	rnd := rand.New(rand.NewSource(int64(time.Now().Nanosecond())))
+
+	jitter := rnd.Float64() * float64(max-min)
+	jitterMin := int64(jitter) + int64(min)
+	return time.Duration(jitterMin * int64(attemptNum))
+}
+
+// ExponentialJitterBackoff returns exponential backoff with jitter
+// seep = rand(minDelay, min(maxDelay, base * 2 ** attemptNum))
+func ExponentialJitterBackoff(min, max time.Duration, attemptNum int, resp *http.Response) time.Duration {
+	// nolint:gosec // math/rand is strong enough for this case
+	rnd := rand.New(rand.NewSource(int64(time.Now().Nanosecond())))
+
+	base := float64(min) * float64(attemptNum)
+	maxDelay := math.Min(float64(max), base*math.Pow(2.0, float64(attemptNum)))
+
+	if float64(min) > maxDelay { // it's unclear what to do in such case
+		maxDelay = float64(max)
 	}
 
-	return delay
+	jitter := rnd.Float64() * (maxDelay - float64(min))
+	jitterMin := int64(jitter) + int64(min)
+
+	return min + time.Duration(jitterMin)
 }
 
 // Signer is an interface of function to sign request body

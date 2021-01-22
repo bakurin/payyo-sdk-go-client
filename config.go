@@ -2,6 +2,12 @@ package client
 
 import "time"
 
+var (
+	defaultRetryWaitMin = 1 * time.Second
+	defaultRetryWaitMax = 30 * time.Second
+	defaultRetryMax     = 4
+)
+
 // Config is client configuration object
 type Config struct {
 	publicKey    string
@@ -16,10 +22,12 @@ type Config struct {
 // NewConfig initializes a client configuration
 func NewConfig(publicKey, secret string) *Config {
 	return &Config{
-		publicKey: publicKey,
-		secret:    secret,
-		BaseURL:   BaseURLV3,
-		Logger:    NewNullLogger(),
-		RetryMax:  1,
+		publicKey:    publicKey,
+		secret:       secret,
+		BaseURL:      BaseURLV3,
+		Logger:       NewNullLogger(),
+		RetryWaitMin: defaultRetryWaitMin,
+		RetryWaitMax: defaultRetryWaitMax,
+		RetryMax:     defaultRetryMax,
 	}
 }
