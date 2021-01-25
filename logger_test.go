@@ -14,8 +14,8 @@ func TestDefaultLogger(t *testing.T) {
 	os.Stdout = w
 
 	msg := "test message"
-	lgr := NewDefaultLogger()
-	lgr.Logf(msg)
+	lgr := NewDefaultLogger(DebugLevel)
+	lgr.Logf(DebugLevel, msg)
 
 	outC := make(chan string)
 	go func() {
@@ -32,11 +32,18 @@ func TestDefaultLogger(t *testing.T) {
 }
 
 func TestLoggerFunc_Logf(t *testing.T) {
-	lgr := LoggerFunc(func(format string, args ...interface{}) {
+	lgr := LoggerFunc(func(level LogLevel, format string, args ...interface{}) {
 		assert.Equal(t, format, "format")
 		assert.Len(t, args, 2)
 		assert.Equal(t, "arg1", args[0])
 		assert.Equal(t, "arg2", args[1])
 	})
-	lgr.Logf("format", "arg1", "arg2")
+	lgr.Logf(DebugLevel, "format", "arg1", "arg2")
+}
+
+func TestLevel_String(t *testing.T) {
+	assert.Equal(t, "error", ErrorLevel.String())
+	assert.Equal(t, "warning", WarningLevel.String())
+	assert.Equal(t, "info", InfoLevel.String())
+	assert.Equal(t, "debug", DebugLevel.String())
 }

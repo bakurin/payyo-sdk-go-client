@@ -114,9 +114,7 @@ func (c apiClient) CallWithContext(ctx context.Context, method string, params, r
 	rpcReq := newRPCRequest(method, params, "1")
 	body, err := json.Marshal(rpcReq)
 
-	if c.Config.Logger != nil {
-		c.Config.Logger.Logf("[DBG] request body: %s", body)
-	}
+	c.log(DebugLevel, "request body: %s", body)
 
 	if err != nil {
 		return err
@@ -175,7 +173,7 @@ func (c *apiClient) sendRequest(req *http.Request, v interface{}) error {
 		shouldRetry, checkErr = checkRetry(req.Context(), resp, c.Config.RetryMax, attempt, doErr)
 
 		if doErr != nil {
-			c.log("[ERR] %s %s request failed: %v", req.Method, req.URL, doErr)
+			c.log(ErrorLevel, "%s %s request failed: %v", req.Method, req.URL, doErr)
 		}
 
 		if !shouldRetry {
@@ -283,13 +281,13 @@ func (c apiClient) drainBody(body io.ReadCloser) {
 	defer body.Close()
 	_, err := io.Copy(ioutil.Discard, io.LimitReader(body, int64(4096)))
 	if err != nil {
-		c.log("[ERR] error reading response body: %v", err)
+		c.log(ErrorLevel, "error reading response body: %v", err)
 	}
 }
 
-func (c apiClient) log(format string, args ...interface{}) {
+func (c apiClient) log(level LogLevel, format string, args ...interface{}) {
 	if c.Config.Logger != nil {
-		c.Config.Logger.Logf(format, args...)
+		c.Config.Logger.Logf(level, format, args...)
 	}
 }
 

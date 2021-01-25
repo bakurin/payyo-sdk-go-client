@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -27,8 +28,9 @@ func main() {
 	stop := startMockServer(serverTerminated)
 
 	// Log to stdout. You can choose any other way to log
-	logger := client.LoggerFunc(func(format string, args ...interface{}) {
-		_, _ = fmt.Printf(format, args...)
+	logger := client.LoggerFunc(func(level client.LogLevel, format string, args ...interface{}) {
+		prefix := fmt.Sprintf("[%s] ", strings.ToUpper(level.String()))
+		_, _ = fmt.Printf(prefix+format, args...)
 	})
 
 	// Mock server doesn't authenticate request. But to run on real environment
