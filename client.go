@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"time"
 )
 
@@ -58,10 +59,24 @@ func New(config *Config) Client {
 // Backoff allows to define different backoff scenarios to request retries
 type Backoff func(min, max time.Duration, attemptNum int, resp *http.Response) time.Duration
 
+func retryAfter(resp *http.Response) time.Duration {
+	if resp.StatusCode == http.StatusTooManyRequests {
+		if sleep, err := strconv.ParseInt(resp.Header.Get("Retry-After"), 10, 64); err == nil {
+			return time.Second * time.Duration(sleep)
+		}
+	}
+
+	return 0
+}
+
 // LinearJitterBackoff linearly increased the backoff with jiter
 func LinearJitterBackoff(min, max time.Duration, attemptNum int, resp *http.Response) time.Duration {
-	rnd := rand.New(rand.NewSource(int64(time.Now().Nanosecond())))
+	delay := retryAfter(resp)
+	if delay > 0 {
+		return delay
+	}
 
+	rnd := rand.New(rand.NewSource(int64(time.Now().Nanosecond())))
 	jitter := rnd.Float64() * float64(max-min)
 	jitterMin := int64(jitter) + int64(min)
 	return time.Duration(jitterMin * int64(attemptNum))
@@ -70,6 +85,11 @@ func LinearJitterBackoff(min, max time.Duration, attemptNum int, resp *http.Resp
 // ExponentialJitterBackoff returns exponential backoff with jitter
 // seep = rand(minDelay, min(maxDelay, base * 2 ** attemptNum))
 func ExponentialJitterBackoff(min, max time.Duration, attemptNum int, resp *http.Response) time.Duration {
+	delay := retryAfter(resp)
+	if delay > 0 {
+		return delay
+	}
+
 	// nolint:gosec // math/rand is strong enough for this case
 	rnd := rand.New(rand.NewSource(int64(time.Now().Nanosecond())))
 

@@ -233,6 +233,19 @@ func TestLinearJitterBackoff(t *testing.T) {
 	assert.Less(t, backoff.Nanoseconds(), max.Nanoseconds())
 }
 
+func TestLinearJitterBackoff_Status429(t *testing.T) {
+	min := time.Second
+	max := 2 * time.Second
+	backoff := LinearJitterBackoff(min, max, 1, &http.Response{
+		StatusCode: http.StatusTooManyRequests,
+		Header: http.Header{
+			"Retry-After": {"3600"},
+		},
+	})
+
+	assert.Equal(t, 3600*time.Second, backoff)
+}
+
 func TestExponentialJitterBackoff(t *testing.T) {
 	min := time.Second
 	max := 60 * time.Second
