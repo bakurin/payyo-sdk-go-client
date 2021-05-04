@@ -60,7 +60,7 @@ func New(config *Config) Client {
 type Backoff func(min, max time.Duration, attemptNum int, resp *http.Response) time.Duration
 
 func retryAfter(resp *http.Response) time.Duration {
-	if resp.StatusCode == http.StatusTooManyRequests {
+	if resp != nil && resp.StatusCode == http.StatusTooManyRequests {
 		if sleep, err := strconv.ParseInt(resp.Header.Get("Retry-After"), 10, 64); err == nil {
 			return time.Second * time.Duration(sleep)
 		}
@@ -69,7 +69,7 @@ func retryAfter(resp *http.Response) time.Duration {
 	return 0
 }
 
-// LinearJitterBackoff linearly increased the backoff with jiter
+// LinearJitterBackoff linearly increased the backoff with jitter
 func LinearJitterBackoff(min, max time.Duration, attemptNum int, resp *http.Response) time.Duration {
 	delay := retryAfter(resp)
 	if delay > 0 {
