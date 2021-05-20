@@ -5,7 +5,7 @@ import "time"
 var (
 	defaultRetryWaitMin = 1 * time.Second
 	defaultRetryWaitMax = 30 * time.Second
-	defaultRetryMax     = 4
+	defaultRetryMax     = 1
 )
 
 // Config is client configuration object
