@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -249,7 +250,7 @@ func (c *apiClient) sendRequest(req *http.Request, v interface{}) error {
 		return fmt.Errorf("%s %s giving up after %d attempt(s)", req.Method, req.URL, attempt)
 	}
 
-	return err
+	return fmt.Errorf("request failed after %d attempts: %w", attempt, err)
 }
 
 func checkRetry(ctx context.Context, resp *http.Response, retryMax, attemptNum int, err error) (bool, error) {
@@ -287,11 +288,11 @@ func retryPolicy(resp *http.Response, err error) (bool, error) {
 
 	// consider error codes of range 500 as recoverable
 	if resp.StatusCode == 0 || (resp.StatusCode >= 500 && resp.StatusCode != 501) {
-		return true, fmt.Errorf("unexpected HTTP status: %s", resp.Status)
+		return true, errors.New(resp.Status)
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return false, fmt.Errorf("unexpected HTTP status: %s", resp.Status)
+		return false, errors.New(resp.Status)
 	}
 
 	return false, nil

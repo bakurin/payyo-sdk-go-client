@@ -127,9 +127,10 @@ func TestClient_Call_FailAfterAllRetries(t *testing.T) {
 	}
 
 	err := client.Call("any.method", &struct{}{}, &struct{}{})
+	err = errors.Unwrap(err)
 
 	assert.Error(t, err)
-	assert.Equal(t, "unexpected HTTP status: 500 Internal Server Error", err.Error())
+	assert.Equal(t, "500 Internal Server Error", err.Error())
 }
 
 func TestClient_Call_DoNotRetry(t *testing.T) {
@@ -149,9 +150,10 @@ func TestClient_Call_DoNotRetry(t *testing.T) {
 	}
 
 	err := client.Call("any.method", &struct{}{}, &struct{}{})
+	err = errors.Unwrap(err)
 
 	assert.Error(t, err)
-	assert.Equal(t, "unexpected HTTP status: 401 Unauthorized", err.Error())
+	assert.Equal(t, "401 Unauthorized", err.Error())
 }
 
 func TestClient_retryPolicy_Status500(t *testing.T) {
@@ -161,7 +163,7 @@ func TestClient_retryPolicy_Status500(t *testing.T) {
 	}
 
 	shouldRetry, err := retryPolicy(resp, nil)
-	assert.EqualError(t, err, "unexpected HTTP status: Internal Server Error")
+	assert.EqualError(t, err, "Internal Server Error")
 	assert.True(t, shouldRetry)
 }
 
@@ -172,7 +174,7 @@ func TestClient_retryPolicy_Status400(t *testing.T) {
 	}
 
 	shouldRetry, err := retryPolicy(resp, nil)
-	assert.EqualError(t, err, "unexpected HTTP status: Bad Request")
+	assert.EqualError(t, err, "Bad Request")
 	assert.False(t, shouldRetry)
 }
 
